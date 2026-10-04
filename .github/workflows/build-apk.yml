@@ -1,0 +1,95 @@
+name: Build Android APK (100% Free Cloud Engine)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: 'Target Website URL (e.g., https://example.com)'
+        required: true
+        default: 'https://mtaa.co.tz'
+      app_name:
+        description: 'Native App Display Name'
+        required: true
+        default: 'Mtaa Express'
+      package_name:
+        description: 'Android Package ID (e.g., com.mtaa.app)'
+        required: true
+        default: 'com.mtaa.app'
+
+jobs:
+  build-apk:
+    name: Compile Android Binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20 Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup OpenJDK 17 Environment
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK Platform Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Initialize Web Project & Capacitor Bridge
+        run: |
+          mkdir -p www
+          cat <<EOT > www/index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${{ github.event.inputs.app_name }}</title>
+            <script>
+              window.location.href = "${{ github.event.inputs.app_url }}";
+            </script>
+          </head>
+          <body style="background:#080d1a; color:#fff; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; font-family:sans-serif;">
+            <p>Connecting to ${{ github.event.inputs.app_name }}...</p>
+          </body>
+          </html>
+          EOT
+          npm init -y
+          npm install @capacitor/core@6.0.0 @capacitor/cli@6.0.0 @capacitor/android@6.0.0
+
+      - name: Configure Native Project & Build Settings
+        run: |
+          npx cap init "${{ github.event.inputs.app_name }}" "${{ github.event.inputs.package_name }}" --web-dir www
+          cat <<EOT > capacitor.config.json
+          {
+            "appId": "${{ github.event.inputs.package_name }}",
+            "appName": "${{ github.event.inputs.app_name }}",
+            "webDir": "www",
+            "server": {
+              "url": "${{ github.event.inputs.app_url }}",
+              "cleartext": true
+            },
+            "android": {
+              "allowMixedContent": true,
+              "captureInput": true,
+              "backgroundColor": "#080d1a"
+            }
+          }
+          EOT
+          npx cap add android
+
+      - name: Build Android Debug APK Package
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.app_name }}-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
